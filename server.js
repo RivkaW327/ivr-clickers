@@ -6,57 +6,77 @@ app.use(cors());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
-// זיכרון פנימי לניהול המשחק וההצבעות (ללא צורך במסד חיצוני)
+// זיכרון המשחק
 let gameState = {
   currentQuestion: 0,
   isOpenForVoting: true
 };
 
-// מבנה: { 0: { "0501234567": "1", "0527654321": "3" } }
+// מבנה: { 0: { "0501234567": "1" }, 1: { ... } }
 let votes = {};
 
-// 1. ממשק מול ימות המשיח (שיחות טלפון)
+// 1. ממשק מול ימות המשיח (האזנה לטלפונים)
 app.get('/api/ivr', (req, res) => {
   const phone = req.query.ApiPhone || req.query.phone || "anon";
-  const digits = req.query.ApiDigits; // מקש שהוקש: 1, 2 או 3
+  
+  // חילוץ ההקשה מתוך משתנה ייעודי 'Vote' (או נפילה ל-ApiDigits אם אין)
+  let rawVote = req.query.Vote;
+  if (!rawVote && req.query.ApiDigits && !['1', '2', '3'].includes(req.query.ApiExtension)) {
+    rawVote = req.query.ApiDigits;
+  }
+
+  // אם התקבל מערך בעקבות כפילות - לוקחים תמיד את ההקשה האחרונה
+  const vote = Array.isArray(rawVote) ? String(rawVote[rawVote.length - 1]).trim() : (rawVote ? String(rawVote).trim() : null);
 
   const currentQ = gameState.currentQuestion;
+  console.log(`[IVR Call] Phone: ${phone} | Pressed: "${vote}" | Current Q: ${currentQ} | IsOpen: ${gameState.isOpenForVoting}`);
 
-  if (digits && ['1', '2', '3'].includes(digits)) {
+  // מקרה א': המשתמש הקיש תשובה (1, 2 או 3)
+  if (vote && ['1', '2', '3'].includes(vote)) {
     if (gameState.isOpenForVoting) {
       if (!votes[currentQ]) votes[currentQ] = {};
-      votes[currentQ][phone] = digits; // שמירת ההצבעה
+      votes[currentQ][phone] = vote; // שמירה/עדכון הבחירה
 
-      const responseText = "id_list_message=t-תשובתך נקלטה.&read=t-המתינו לשאלה הבאה=ApiDigits,no,1,1,15,Number,no";
+      console.log(`-> Vote SAVED for Q${currentQ}: Phone ${phone} voted ${vote}`);
+
+      // אישור קצרצר וחזרה מידית להאזנה שקטה של עד 60 שניות
+      const responseText = "id_list_message=t-נקלט.&read=t- =Vote,no,1,1,60,Number,no";
       return res.send(responseText);
     } else {
-      const responseText = "id_list_message=t-ההצבעה לשאלה זו נסגרה.&read=t-המתינו לפתיחת השאלה הבאה=ApiDigits,no,1,1,10,Number,no";
+      console.log(`-> Vote REJECTED: Voting is closed for Q${currentQ}`);
+      const responseText = "id_list_message=t-ההצבעה לשאלה זו סגורה.&read=t- =Vote,no,1,1,60,Number,no";
       return res.send(responseText);
     }
   }
 
-  // תפריט כניסה או המתנה להקשה
-  const prompt = "read=t-בחרו תשובה אחת שתיים או שלוש=ApiDigits,no,1,1,10,Number,no";
+  // מקרה ב': כניסה ראשונית או סיום זמן המתנה שקט (Timeout)
+  // השיחה נשארת פעילה ומאזינה להקשה הבאה ללא ניתוק
+  const prompt = "read=t- =Vote,no,1,1,60,Number,no";
   return res.send(prompt);
 });
 
 // 2. עדכון מצב השאלה ממסך המשחק (HTML)
 app.get('/api/set-question', (req, res) => {
-  const q = parseInt(req.query.q) || 0;
-  const open = req.query.open !== 'false';
+  const q = parseInt(req.query.q, 10);
+  if (!isNaN(q)) {
+    gameState.currentQuestion = q;
+  }
+  gameState.isOpenForVoting = req.query.open !== 'false';
 
-  gameState.currentQuestion = q;
-  gameState.isOpenForVoting = open;
+  if (!votes[gameState.currentQuestion]) {
+    votes[gameState.currentQuestion] = {};
+  }
 
-  if (!votes[q]) votes[q] = {};
+  console.log(`[UI State] Switched to Question: ${gameState.currentQuestion} | Open: ${gameState.isOpenForVoting}`);
   res.json({ success: true, gameState });
 });
 
 // 3. משיכת תוצאות בזמן אמת למסך המשחק
 app.get('/api/get-votes', (req, res) => {
-  const q = parseInt(req.query.q) || gameState.currentQuestion;
-  const qVotes = votes[q] || {};
+  let q = parseInt(req.query.q, 10);
+  if (isNaN(q)) q = gameState.currentQuestion;
 
+  const qVotes = votes[q] || {};
   const counts = { '1': 0, '2': 0, '3': 0 };
   const allPhones = Object.keys(qVotes);
   const total = allPhones.length;
@@ -74,9 +94,8 @@ app.get('/api/get-votes', (req, res) => {
   });
 });
 
-// בדיקת תקינות
 app.get('/', (req, res) => {
-  res.send('שרת הקליקרים פעיל ועובד עצמאית.');
+  res.send('שרת קליקרים מעודכן ופעיל.');
 });
 
 const PORT = process.env.PORT || 3000;

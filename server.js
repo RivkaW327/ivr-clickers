@@ -14,7 +14,7 @@ let gameState = {
 
 let votes = {};
 
-// 1. ממשק מול ימות המשיח (האזנה לטלפונים)
+// 1. ממשק מול ימות המשיח
 app.get('/api/ivr', (req, res) => {
   const phone = req.query.ApiPhone || req.query.phone || "anon";
   
@@ -36,18 +36,19 @@ app.get('/api/ivr', (req, res) => {
 
       console.log(`-> Vote SAVED for Q${currentQ}: Phone ${phone} voted ${vote}`);
 
-      // אישור קולי קצר וחזרה מידית להאזנה שקטה ללא בקשת אישור הקשה
-      const responseText = "id_list_message=t-נקלט.&read=t- =Vote,no,1,1,60,Digits,no,no";
+      // אומר "נקלט", מאפשר להקיש מיד שוב (yes), קולט ספרה אחת ללא שום בקשת אישור (digits,no,no)
+      const responseText = "read=t-נקלט=Vote,yes,1,1,60,digits,no,no";
       return res.send(responseText);
     } else {
       console.log(`-> Vote REJECTED: Voting is closed for Q${currentQ}`);
-      const responseText = "id_list_message=t-ההצבעה לשאלה זו סגורה.&read=t- =Vote,no,1,1,60,Digits,no,no";
+      const responseText = "read=t-ההצבעה סגורה=Vote,yes,1,1,60,digits,no,no";
       return res.send(responseText);
     }
   }
 
-  // מקרה ב': כניסה לשלוחה / המתנה שקטה לקליטת מקש (קולט מיד ללא אישור)
-  const prompt = "read=t- =Vote,no,1,1,60,Digits,no,no";
+  // מקרה ב': כניסה ראשונית או המתנה לשאלה
+  // משמיע הנחיה קצרה וממתין להקשה שתיקלט מיד ללא אישור
+  const prompt = "read=t-נא לבחור תשובה=Vote,yes,1,1,60,digits,no,no";
   return res.send(prompt);
 });
 
@@ -90,8 +91,9 @@ app.get('/api/get-votes', (req, res) => {
   });
 });
 
+// משפט בדיקה לווידוא שהגרסה החדשה עלתה לאוויר
 app.get('/', (req, res) => {
-  res.send('שרת קליקרים מעודכן ופעיל ללא אישור הקשה.');
+  res.send('גרסה 3 פעילה: ללא אישור הקשה');
 });
 
 const PORT = process.env.PORT || 3000;

@@ -12,43 +12,46 @@ let gameState = {
   isOpenForVoting: true
 };
 
+// מבנה: { 0: { "0501234567": "1" }, 1: { ... } }
 let votes = {};
 
-// 1. ממשק מול ימות המשיח
+// 1. ממשק מול ימות המשיח (האזנה לטלפונים)
 app.get('/api/ivr', (req, res) => {
   const phone = req.query.ApiPhone || req.query.phone || "anon";
   
+  // חילוץ ההקשה מתוך משתנה ייעודי 'Vote' (או נפילה ל-ApiDigits אם אין)
   let rawVote = req.query.Vote;
   if (!rawVote && req.query.ApiDigits && !['1', '2', '3'].includes(req.query.ApiExtension)) {
     rawVote = req.query.ApiDigits;
   }
 
+  // אם התקבל מערך בעקבות כפילות - לוקחים תמיד את ההקשה האחרונה
   const vote = Array.isArray(rawVote) ? String(rawVote[rawVote.length - 1]).trim() : (rawVote ? String(rawVote).trim() : null);
-  const currentQ = gameState.currentQuestion;
 
+  const currentQ = gameState.currentQuestion;
   console.log(`[IVR Call] Phone: ${phone} | Pressed: "${vote}" | Current Q: ${currentQ} | IsOpen: ${gameState.isOpenForVoting}`);
 
-  // מקרה א': נקלטה לחיצה על 1, 2 או 3
+  // מקרה א': המשתמש הקיש תשובה (1, 2 או 3)
   if (vote && ['1', '2', '3'].includes(vote)) {
     if (gameState.isOpenForVoting) {
       if (!votes[currentQ]) votes[currentQ] = {};
-      votes[currentQ][phone] = vote;
+      votes[currentQ][phone] = vote; // שמירה/עדכון הבחירה
 
       console.log(`-> Vote SAVED for Q${currentQ}: Phone ${phone} voted ${vote}`);
 
-      // אומר "נקלט", מאפשר להקיש מיד שוב (yes), קולט ספרה אחת ללא שום בקשת אישור (digits,no,no)
-      const responseText = "read=t-נקלט=Vote,yes,1,1,60,digits,no,no";
+      // אישור קצרצר וחזרה מידית להאזנה שקטה של עד 60 שניות
+      const responseText = "id_list_message=t-נקלט.&read=t- =Vote,no,1,1,60,Number,no";
       return res.send(responseText);
     } else {
       console.log(`-> Vote REJECTED: Voting is closed for Q${currentQ}`);
-      const responseText = "read=t-ההצבעה סגורה=Vote,yes,1,1,60,digits,no,no";
+      const responseText = "id_list_message=t-ההצבעה לשאלה זו סגורה.&read=t- =Vote,no,1,1,60,Number,no";
       return res.send(responseText);
     }
   }
 
-  // מקרה ב': כניסה ראשונית או המתנה לשאלה
-  // משמיע הנחיה קצרה וממתין להקשה שתיקלט מיד ללא אישור
-  const prompt = "read=t-נא לבחור תשובה=Vote,yes,1,1,60,digits,no,no";
+  // מקרה ב': כניסה ראשונית או סיום זמן המתנה שקט (Timeout)
+  // השיחה נשארת פעילה ומאזינה להקשה הבאה ללא ניתוק
+  const prompt = "read=t- =Vote,no,1,1,60,Number,no";
   return res.send(prompt);
 });
 
@@ -91,9 +94,8 @@ app.get('/api/get-votes', (req, res) => {
   });
 });
 
-// משפט בדיקה לווידוא שהגרסה החדשה עלתה לאוויר
 app.get('/', (req, res) => {
-  res.send('גרסה 3 פעילה: ללא אישור הקשה');
+  res.send('שרת קליקרים מעודכן ופעיל.');
 });
 
 const PORT = process.env.PORT || 3000;
